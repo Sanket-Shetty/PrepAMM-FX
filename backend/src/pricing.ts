@@ -28,7 +28,9 @@ const staticUsdPrices: Record<TokenSymbol, number> = {
   MXNT: 0.056,
   DAI: 1,
   WETH: 3800,
-  WBTC: 69000
+  WBTC: 69000,
+  VIRTUAL: 0.72,
+  SOL: 90
 };
 
 async function getCoingeckoUsd(symbol: TokenSymbol): Promise<number> {

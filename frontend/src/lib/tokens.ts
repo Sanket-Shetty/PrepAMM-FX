@@ -23,7 +23,9 @@ export const tokenSymbols = [
   "MXNT",
   "DAI",
   "WETH",
-  "WBTC"
+  "WBTC",
+  "VIRTUAL",
+  "SOL"
 ] as const;
 export type TokenSymbol = (typeof tokenSymbols)[number];
 

@@ -27,7 +27,7 @@ type QuoteResponse = {
     expiresAt: string;
     spreadBps: number;
     protocolFeeBps: number;
-    source: "amm" | "price-api" | "self" | "native-usdc-amm";
+    source: "amm" | "price-api" | "self" | "native-usdc-amm" | "market-maker-rfq";
     benchmarkOutput: string;
     bestAmmRoute: null | {
       adapter: string;
@@ -102,6 +102,8 @@ export function App() {
       ? "AMM"
       : quote.quote.source === "native-usdc-amm"
         ? "Native USDC + AMM"
+        : quote.quote.source === "market-maker-rfq"
+          ? "Market Maker RFQ"
         : quote.quote.source === "self"
           ? "Same asset"
           : "Price API"

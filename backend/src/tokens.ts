@@ -23,7 +23,9 @@ export type TokenSymbol =
   | "MXNT"
   | "DAI"
   | "WETH"
-  | "WBTC";
+  | "WBTC"
+  | "VIRTUAL"
+  | "SOL";
 
 export interface TokenInfo {
   symbol: TokenSymbol;
@@ -316,6 +318,26 @@ export const TOKENS: Record<TokenSymbol, TokenInfo> = {
       8453: "0x0555e30da8f98308edb960aa94c0dbc2c9ccddbf",
       137: "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6",
       10: "0x68f180fcce6836688e9084f035309e29bf0a2095"
+    })
+  },
+  VIRTUAL: {
+    symbol: "VIRTUAL",
+    decimals: 18,
+    coingeckoId: "virtual-protocol",
+    cmcSymbol: "VIRTUAL",
+    binanceSymbol: "VIRTUALUSDT",
+    addresses: addresses("VIRTUAL", {
+      8453: "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b"
+    })
+  },
+  SOL: {
+    symbol: "SOL",
+    decimals: 9,
+    coingeckoId: "base-bridged-sol-base",
+    cmcSymbol: "SOL",
+    binanceSymbol: "SOLUSDT",
+    addresses: addresses("SOL", {
+      8453: "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82"
     })
   }
 };
