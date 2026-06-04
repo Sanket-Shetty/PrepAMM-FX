@@ -25,7 +25,8 @@ export type TokenSymbol =
   | "WETH"
   | "WBTC"
   | "VIRTUAL"
-  | "SOL";
+  | "SOL"
+  | "PURe";
 
 export interface TokenInfo {
   symbol: TokenSymbol;
@@ -338,6 +339,15 @@ export const TOKENS: Record<TokenSymbol, TokenInfo> = {
     binanceSymbol: "SOLUSDT",
     addresses: addresses("SOL", {
       8453: "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82"
+    })
+  },
+  PURe: {
+    symbol: "PURe",
+    decimals: 18,
+    coingeckoId: "prepamm-pure-stable",
+    cmcSymbol: "PURE",
+    addresses: addresses("PURe", {
+      8453: "0xa49262b148b4a58f0a74cb087af5e73f3fb8076d"
     })
   }
 };

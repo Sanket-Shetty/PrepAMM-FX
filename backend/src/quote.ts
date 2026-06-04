@@ -18,6 +18,8 @@ function applyBps(amount: bigint, bps: number): bigint {
   return (amount * BigInt(10_000 - bps)) / 10_000n;
 }
 
+const NATIVE_USDC_SYMBOLS = new Set<TokenSymbol>(["EURe", "PURe"]);
+
 export async function buildQuote(req: QuoteRequest) {
   if (!SUPPORTED_CHAIN_IDS.includes(req.chainId as any)) throw new Error("Unsupported chain");
   if (!ethers.isAddress(req.taker)) throw new Error("Invalid taker");
@@ -71,7 +73,7 @@ export async function buildQuote(req: QuoteRequest) {
     return ethers.parseUnits(rawOutput.toFixed(Math.min(TOKENS[to].decimals, 8)), TOKENS[to].decimals);
   }
 
-  async function addNativeLiquidityLeg(to: "USDC" | "EURe") {
+  async function addNativeLiquidityLeg(to: "USDC" | "EURe" | "PURe") {
     const from = currentSymbol;
     const amountIn = currentAmount;
     currentAmount = await priceOutput(from, to, amountIn);
@@ -79,7 +81,7 @@ export async function buildQuote(req: QuoteRequest) {
       leg: routePlan.length + 1,
       from,
       to,
-      venue: "Our EURe/USDC native liquidity",
+      venue: from === "PURe" || to === "PURe" ? "Our PURe/USDC native liquidity" : "Our EURe/USDC native liquidity",
       source: "native-liquidity",
       inputAmount: formatUnits(from, amountIn),
       outputAmount: formatUnits(to, currentAmount)
@@ -147,12 +149,12 @@ export async function buildQuote(req: QuoteRequest) {
       outputAmount: formatUnits(req.outputSymbol, inputUnits)
     });
   } else {
-    if (currentSymbol === "EURe" && req.outputSymbol !== "USDC") await addNativeLiquidityLeg("USDC");
+    if (NATIVE_USDC_SYMBOLS.has(currentSymbol)) await addNativeLiquidityLeg("USDC");
     if (currentSymbol === "SOL" && req.outputSymbol !== "SOL") await addAmmLeg("WETH");
 
-    if (req.outputSymbol === "EURe") {
+    if (NATIVE_USDC_SYMBOLS.has(req.outputSymbol)) {
       if (currentSymbol !== "USDC") await addAmmLeg("USDC");
-      await addNativeLiquidityLeg("EURe");
+      await addNativeLiquidityLeg(req.outputSymbol as "EURe" | "PURe");
     } else if (req.outputSymbol === "SOL") {
       if (currentSymbol !== "WETH") await addAmmLeg("WETH");
       await addAmmLeg("SOL");
@@ -168,7 +170,7 @@ export async function buildQuote(req: QuoteRequest) {
   const usesNativeLiquidity = routePlan.some((leg) => leg.source === "native-liquidity");
   const usesAmm = routePlan.some((leg) => leg.source === "amm");
   const usesMarketMakerRfq = routePlan.some((leg) => leg.source === "market-maker-rfq");
-  const source = isSameAsset ? "self" : usesNativeLiquidity && usesAmm ? "native-usdc-amm" : usesAmm ? "amm" : usesMarketMakerRfq ? "market-maker-rfq" : "price-api";
+  const source = isSameAsset ? "self" : usesNativeLiquidity && usesAmm ? "native-usdc-amm" : usesAmm ? "amm" : usesMarketMakerRfq ? "market-maker-rfq" : usesNativeLiquidity ? "native-usdc" : "price-api";
   const expiry = Math.floor(Date.now() / 1000) + QUOTE_TTL_SECONDS;
   const nonce = req.nonce ? BigInt(req.nonce) : BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000));
 

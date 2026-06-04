@@ -25,7 +25,8 @@ export const tokenSymbols = [
   "WETH",
   "WBTC",
   "VIRTUAL",
-  "SOL"
+  "SOL",
+  "PURe"
 ] as const;
 export type TokenSymbol = (typeof tokenSymbols)[number];
 
