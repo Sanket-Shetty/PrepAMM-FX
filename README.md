@@ -55,16 +55,29 @@ User request -> token metadata -> AMM quoter adapters -> best route -> MM spread
                                       +-> fallback to CoinGecko/CMC/Binance reference prices
 ```
 
-The first adapter supports Uniswap V3-compatible `QuoterV2` contracts across the configured chains. Set the chain RPC and quoter address to enable on-chain AMM route discovery:
+The AMM layer now fans out across multiple quote sources and chooses the highest executable output:
+
+- `uniswap-v3`: V3 `QuoterV2` fee-tier quotes.
+- `pancakeswap-v3`: PancakeSwap V3-compatible quoter quotes.
+- `aerodrome`: Base router quotes for volatile and stable routes.
+- `alienbase`: Base router quote support when `ALIENBASE_ROUTER_8453` is configured.
+- `openocean`: Aggregator quote API fallback alongside direct on-chain router calls.
+
+Set the chain RPC and adapter addresses to enable route discovery:
 
 ```bash
 BASE_RPC_URL=https://mainnet.base.org
 UNISWAP_V3_QUOTER_8453=0xQuoterV2OnBase
+PANCAKESWAP_V3_QUOTER_8453=0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997
+AERODROME_ROUTER_8453=0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43
+ALIENBASE_ROUTER_8453=0xAlienBaseRouterOnBase
+OPENOCEAN_ENABLED=true
+OPENOCEAN_CHAIN_8453=base
 BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 UNISWAP_V3_QUOTER_84532=0xC5290058841028F1614F3A6F0F5816cAd0df5E27
 ```
 
-For each quote, the backend tries common V3 fee tiers: `0.01%`, `0.05%`, `0.3%`, and `1%`. It chooses the route with the highest output, then applies the RFQ spread before signing the order. If no pool exists, no liquidity is available, the quoter is not configured, or the RPC fails, the response falls back to reference-price mode and the frontend shows `Source Price API`.
+For each quote, the backend tries common V3 fee tiers: `0.01%`, `0.05%`, `0.3%`, and `1%`, plus configured router/API adapters. It chooses the route with the highest output, then applies the RFQ spread before signing the order. If no pool exists, no liquidity is available, the quoter is not configured, or the RPC/API fails, the response falls back to reference-price mode and the frontend shows `Source Price API`.
 
 For PURe specifically, deploying and minting the token is not enough. AMM quotes will only show `Source AMM` after a funded PURe/USDC pool exists on the target chain and the corresponding quoter/RPC env values are configured.
 

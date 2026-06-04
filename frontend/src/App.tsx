@@ -76,6 +76,10 @@ const apiBase = import.meta.env.VITE_QUOTE_API_URL || "http://localhost:4000";
 const demoTaker = "0x000000000000000000000000000000000000dEaD" as const;
 const defaultChainId = 8453;
 
+function adapterText(adapter: string, feeTier?: number): string {
+  return feeTier ? `${adapter} ${feeTier / 10_000}%` : `${adapter} router`;
+}
+
 export function App() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -292,7 +296,7 @@ export function App() {
                 <span>
                   {leg.inputAmount} {leg.from} to {leg.outputAmount} {leg.to}
                 </span>
-                {leg.adapter && <span>{leg.adapter} {leg.feeTier ? `${leg.feeTier / 10_000}%` : ""}</span>}
+                {leg.adapter && <span>{adapterText(leg.adapter, leg.feeTier)}</span>}
               </div>
             ))}
           </div>
@@ -300,7 +304,7 @@ export function App() {
         {quote?.quote.bestAmmRoute && (
           <div className="routeMeta">
             <span>{quote.quote.bestAmmRoute.adapter}</span>
-            <span>Fee tier {quote.quote.bestAmmRoute.feeTier / 10_000}%</span>
+            <span>{quote.quote.bestAmmRoute.feeTier ? `Fee tier ${quote.quote.bestAmmRoute.feeTier / 10_000}%` : "Router quote"}</span>
             <span>AMM out {quote.quote.bestAmmRoute.amountOut}</span>
           </div>
         )}
@@ -326,7 +330,7 @@ export function App() {
                 <div className="quoteRow" key={symbol}>
                   <span>{symbol}</span>
                   <span>{row.ok ? row.guaranteedOutput : "No route"}</span>
-                  <span>{row.source === "amm" && row.route ? `${row.route.adapter} ${row.route.feeTier / 10_000}%` : row.reason}</span>
+                  <span>{row.source === "amm" && row.route ? adapterText(row.route.adapter, row.route.feeTier) : row.reason}</span>
                 </div>
               );
             })}

@@ -1,13 +1,24 @@
+import axios from "axios";
 import { ethers } from "ethers";
 import { config, DEFAULT_UNISWAP_V3_FEE_TIERS } from "./config";
-import { TokenSymbol } from "./tokens";
+import { TOKENS, TokenSymbol } from "./tokens";
 
-const uniswapV3QuoterAbi = [
+const v3QuoterAbi = [
   "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 initializedTicksCrossed,uint256 gasEstimate)"
 ];
 
+const routerV2Abi = [
+  "function getAmountsOut(uint256 amountIn,address[] calldata path) view returns (uint256[] memory amounts)"
+];
+
+const aerodromeRouterAbi = [
+  "function getAmountsOut(uint256 amountIn,(address from,address to,bool stable,address factory)[] calldata routes) view returns (uint256[] memory amounts)"
+];
+
+export type AmmAdapter = "uniswap-v3" | "pancakeswap-v3" | "aerodrome" | "alienbase" | "openocean";
+
 export interface AmmRouteQuote {
-  adapter: "uniswap-v3";
+  adapter: AmmAdapter;
   chainId: number;
   tokenIn: string;
   tokenOut: string;
@@ -22,6 +33,15 @@ export interface AmmRouteQuote {
 export interface AmmQuoteResult {
   bestRoute?: AmmRouteQuote;
   attemptedRoutes: Array<Pick<AmmRouteQuote, "adapter" | "chainId" | "feeTier"> & { ok: boolean; reason?: string }>;
+}
+
+interface QuoteParams {
+  chainId: number;
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: bigint;
+  inputSymbol: TokenSymbol;
+  outputSymbol: TokenSymbol;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -47,20 +67,26 @@ function getProvider(chainId: number): ethers.JsonRpcProvider | undefined {
   return new ethers.JsonRpcProvider(rpcUrl, chainId);
 }
 
-async function quoteUniswapV3FeeTier(params: {
-  chainId: number;
-  quoterAddress: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: bigint;
-  inputSymbol: TokenSymbol;
-  outputSymbol: TokenSymbol;
-  feeTier: number;
-}): Promise<AmmRouteQuote> {
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function hasCode(provider: ethers.JsonRpcProvider, address: string, missingReason: string): Promise<void> {
+  const code = await withRetry(() => provider.getCode(address));
+  if (code === "0x") throw new Error(missingReason);
+}
+
+async function quoteV3FeeTier(
+  params: QuoteParams & {
+    adapter: Extract<AmmAdapter, "uniswap-v3" | "pancakeswap-v3">;
+    quoterAddress: string;
+    feeTier: number;
+  }
+): Promise<AmmRouteQuote> {
   const provider = getProvider(params.chainId);
   if (!provider) throw new Error("RPC URL not configured");
 
-  const quoter = new ethers.Contract(params.quoterAddress, uniswapV3QuoterAbi, provider);
+  const quoter = new ethers.Contract(params.quoterAddress, v3QuoterAbi, provider);
   const [amountOut, , , gasEstimate] = await quoter.quoteExactInputSingle.staticCall({
     tokenIn: params.tokenIn,
     tokenOut: params.tokenOut,
@@ -70,7 +96,7 @@ async function quoteUniswapV3FeeTier(params: {
   });
 
   return {
-    adapter: "uniswap-v3",
+    adapter: params.adapter,
     chainId: params.chainId,
     tokenIn: params.tokenIn,
     tokenOut: params.tokenOut,
@@ -83,72 +109,200 @@ async function quoteUniswapV3FeeTier(params: {
   };
 }
 
-export async function getBestAmmQuote(params: {
-  chainId: number;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: bigint;
-  inputSymbol: TokenSymbol;
-  outputSymbol: TokenSymbol;
-}): Promise<AmmQuoteResult> {
-  const attemptedRoutes: AmmQuoteResult["attemptedRoutes"] = [];
-  const quoterAddress = config.ammQuoters[params.chainId];
-
-  if (!config.rpcUrls[params.chainId]) {
-    return { attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "RPC URL not configured" }] };
-  }
-
-  if (!quoterAddress || !ethers.isAddress(quoterAddress)) {
-    return { attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "Uniswap V3 quoter not configured" }] };
-  }
-
+async function quoteV2Router(params: QuoteParams & { adapter: "alienbase"; routerAddress: string }): Promise<AmmRouteQuote> {
   const provider = getProvider(params.chainId);
-  if (!provider) {
-    return { attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "RPC URL not configured" }] };
-  }
+  if (!provider) throw new Error("RPC URL not configured");
 
-  const [tokenInCode, tokenOutCode, quoterCode] = await Promise.all([
-    withRetry(() => provider.getCode(params.tokenIn)),
-    withRetry(() => provider.getCode(params.tokenOut)),
-    withRetry(() => provider.getCode(quoterAddress))
-  ]);
-  if (tokenInCode === "0x") {
-    return { attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "Input token has no contract code on this chain" }] };
-  }
-  if (tokenOutCode === "0x") {
-    return { attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "Output token has no contract code on this chain" }] };
-  }
-  if (quoterCode === "0x") {
-    return { attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "Configured quoter has no contract code on this chain" }] };
-  }
+  const router = new ethers.Contract(params.routerAddress, routerV2Abi, provider);
+  const amounts: bigint[] = await router.getAmountsOut.staticCall(params.amountIn, [params.tokenIn, params.tokenOut]);
+  const amountOut = amounts.at(-1);
+  if (!amountOut || amountOut === 0n) throw new Error("Router returned zero output");
 
+  return {
+    adapter: params.adapter,
+    chainId: params.chainId,
+    tokenIn: params.tokenIn,
+    tokenOut: params.tokenOut,
+    inputSymbol: params.inputSymbol,
+    outputSymbol: params.outputSymbol,
+    feeTier: 0,
+    amountIn: params.amountIn.toString(),
+    amountOut: amountOut.toString()
+  };
+}
+
+async function quoteAerodrome(params: QuoteParams & { routerAddress: string; stable: boolean }): Promise<AmmRouteQuote> {
+  const provider = getProvider(params.chainId);
+  if (!provider) throw new Error("RPC URL not configured");
+
+  const router = new ethers.Contract(params.routerAddress, aerodromeRouterAbi, provider);
+  const routes = [{ from: params.tokenIn, to: params.tokenOut, stable: params.stable, factory: ethers.ZeroAddress }];
+  const amounts: bigint[] = await router.getAmountsOut.staticCall(params.amountIn, routes);
+  const amountOut = amounts.at(-1);
+  if (!amountOut || amountOut === 0n) throw new Error("Aerodrome returned zero output");
+
+  return {
+    adapter: "aerodrome",
+    chainId: params.chainId,
+    tokenIn: params.tokenIn,
+    tokenOut: params.tokenOut,
+    inputSymbol: params.inputSymbol,
+    outputSymbol: params.outputSymbol,
+    feeTier: params.stable ? 1 : 0,
+    amountIn: params.amountIn.toString(),
+    amountOut: amountOut.toString()
+  };
+}
+
+async function quoteOpenOcean(params: QuoteParams): Promise<AmmRouteQuote> {
+  if (!config.openOcean.enabled) throw new Error("OpenOcean disabled");
+
+  const chainName = config.openOcean.chainNames[params.chainId];
+  if (!chainName) throw new Error("OpenOcean chain name not configured");
+
+  const amount = ethers.formatUnits(params.amountIn, TOKENS[params.inputSymbol].decimals);
+  const url = `${config.openOcean.baseUrl.replace(/\/$/, "")}/v4/${chainName}/quote`;
+  const response = await axios.get(url, {
+    params: {
+      inTokenAddress: params.tokenIn,
+      outTokenAddress: params.tokenOut,
+      amount,
+      gasPrice: 0.01
+    },
+    timeout: 7000
+  });
+
+  const data = response.data?.data ?? response.data;
+  const rawAmountOut = data?.outAmount ?? data?.outAmountWithoutFee ?? data?.toTokenAmount;
+  if (!rawAmountOut || BigInt(rawAmountOut) === 0n) throw new Error(response.data?.message || "OpenOcean returned no output");
+
+  return {
+    adapter: "openocean",
+    chainId: params.chainId,
+    tokenIn: params.tokenIn,
+    tokenOut: params.tokenOut,
+    inputSymbol: params.inputSymbol,
+    outputSymbol: params.outputSymbol,
+    feeTier: 0,
+    amountIn: params.amountIn.toString(),
+    amountOut: rawAmountOut.toString()
+  };
+}
+
+function pushAttempt(
+  attemptedRoutes: AmmQuoteResult["attemptedRoutes"],
+  adapter: AmmAdapter,
+  chainId: number,
+  feeTier: number,
+  ok: boolean,
+  failedReason?: string
+) {
+  attemptedRoutes.push({ adapter, chainId, feeTier, ok, reason: failedReason });
+}
+
+async function tryQuote(
+  attemptedRoutes: AmmQuoteResult["attemptedRoutes"],
+  successfulQuotes: AmmRouteQuote[],
+  adapter: AmmAdapter,
+  chainId: number,
+  feeTier: number,
+  work: () => Promise<AmmRouteQuote>
+) {
+  try {
+    const quote = await withRetry(work, 2);
+    successfulQuotes.push(quote);
+    pushAttempt(attemptedRoutes, adapter, chainId, feeTier, true);
+  } catch (error) {
+    pushAttempt(attemptedRoutes, adapter, chainId, feeTier, false, reason(error));
+  }
+}
+
+export async function getBestAmmQuote(params: QuoteParams): Promise<AmmQuoteResult> {
+  const attemptedRoutes: AmmQuoteResult["attemptedRoutes"] = [];
   const successfulQuotes: AmmRouteQuote[] = [];
-  for (const feeTier of DEFAULT_UNISWAP_V3_FEE_TIERS) {
-    let lastError: unknown;
-    try {
-      let quote: AmmRouteQuote | undefined;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          quote = await withRetry(() => quoteUniswapV3FeeTier({ ...params, quoterAddress, feeTier }), 2);
-          break;
-        } catch (error) {
-          lastError = error;
-          await sleep(120 * (attempt + 1));
-        }
-      }
-      if (!quote) throw lastError;
-      successfulQuotes.push(quote);
-      attemptedRoutes.push({ adapter: "uniswap-v3", chainId: params.chainId, feeTier, ok: true });
-    } catch (error) {
-      attemptedRoutes.push({
-        adapter: "uniswap-v3",
-        chainId: params.chainId,
-        feeTier,
-        ok: false,
-        reason: error instanceof Error ? error.message : String(error)
-      });
-    }
+  const provider = getProvider(params.chainId);
+
+  if (!provider) {
+    return {
+      attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: "RPC URL not configured" }]
+    };
   }
+
+  try {
+    await Promise.all([
+      hasCode(provider, params.tokenIn, "Input token has no contract code on this chain"),
+      hasCode(provider, params.tokenOut, "Output token has no contract code on this chain")
+    ]);
+  } catch (error) {
+    return {
+      attemptedRoutes: [{ adapter: "uniswap-v3", chainId: params.chainId, feeTier: 0, ok: false, reason: reason(error) }]
+    };
+  }
+
+  const uniswapQuoter = config.ammQuoters[params.chainId];
+  if (uniswapQuoter && ethers.isAddress(uniswapQuoter)) {
+    try {
+      await hasCode(provider, uniswapQuoter, "Configured Uniswap V3 quoter has no contract code on this chain");
+      for (const feeTier of DEFAULT_UNISWAP_V3_FEE_TIERS) {
+        await tryQuote(attemptedRoutes, successfulQuotes, "uniswap-v3", params.chainId, feeTier, () =>
+          quoteV3FeeTier({ ...params, adapter: "uniswap-v3", quoterAddress: uniswapQuoter, feeTier })
+        );
+      }
+    } catch (error) {
+      pushAttempt(attemptedRoutes, "uniswap-v3", params.chainId, 0, false, reason(error));
+    }
+  } else {
+    pushAttempt(attemptedRoutes, "uniswap-v3", params.chainId, 0, false, "Uniswap V3 quoter not configured");
+  }
+
+  const pancakeQuoter = config.pancakeV3Quoters[params.chainId];
+  if (pancakeQuoter && ethers.isAddress(pancakeQuoter)) {
+    try {
+      await hasCode(provider, pancakeQuoter, "Configured PancakeSwap V3 quoter has no contract code on this chain");
+      for (const feeTier of DEFAULT_UNISWAP_V3_FEE_TIERS) {
+        await tryQuote(attemptedRoutes, successfulQuotes, "pancakeswap-v3", params.chainId, feeTier, () =>
+          quoteV3FeeTier({ ...params, adapter: "pancakeswap-v3", quoterAddress: pancakeQuoter, feeTier })
+        );
+      }
+    } catch (error) {
+      pushAttempt(attemptedRoutes, "pancakeswap-v3", params.chainId, 0, false, reason(error));
+    }
+  } else {
+    pushAttempt(attemptedRoutes, "pancakeswap-v3", params.chainId, 0, false, "PancakeSwap V3 quoter not configured");
+  }
+
+  const aerodromeRouter = config.aerodromeRouters[params.chainId];
+  if (aerodromeRouter && ethers.isAddress(aerodromeRouter)) {
+    try {
+      await hasCode(provider, aerodromeRouter, "Configured Aerodrome router has no contract code on this chain");
+      await tryQuote(attemptedRoutes, successfulQuotes, "aerodrome", params.chainId, 0, () =>
+        quoteAerodrome({ ...params, routerAddress: aerodromeRouter, stable: false })
+      );
+      await tryQuote(attemptedRoutes, successfulQuotes, "aerodrome", params.chainId, 1, () =>
+        quoteAerodrome({ ...params, routerAddress: aerodromeRouter, stable: true })
+      );
+    } catch (error) {
+      pushAttempt(attemptedRoutes, "aerodrome", params.chainId, 0, false, reason(error));
+    }
+  } else {
+    pushAttempt(attemptedRoutes, "aerodrome", params.chainId, 0, false, "Aerodrome router not configured");
+  }
+
+  const alienBaseRouter = config.alienBaseRouters[params.chainId];
+  if (alienBaseRouter && ethers.isAddress(alienBaseRouter)) {
+    try {
+      await hasCode(provider, alienBaseRouter, "Configured AlienBase router has no contract code on this chain");
+      await tryQuote(attemptedRoutes, successfulQuotes, "alienbase", params.chainId, 0, () =>
+        quoteV2Router({ ...params, adapter: "alienbase", routerAddress: alienBaseRouter })
+      );
+    } catch (error) {
+      pushAttempt(attemptedRoutes, "alienbase", params.chainId, 0, false, reason(error));
+    }
+  } else {
+    pushAttempt(attemptedRoutes, "alienbase", params.chainId, 0, false, "AlienBase router not configured");
+  }
+
+  await tryQuote(attemptedRoutes, successfulQuotes, "openocean", params.chainId, 0, () => quoteOpenOcean(params));
 
   successfulQuotes.sort((a, b) => {
     const left = BigInt(a.amountOut);

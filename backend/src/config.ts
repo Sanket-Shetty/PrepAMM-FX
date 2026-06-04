@@ -35,7 +35,32 @@ export const config = {
     84532: process.env.UNISWAP_V3_QUOTER_84532 || "",
     137: process.env.UNISWAP_V3_QUOTER_137 || "",
     10: process.env.UNISWAP_V3_QUOTER_10 || ""
-  } as Record<number, string>
+  } as Record<number, string>,
+  pancakeV3Quoters: {
+    1: process.env.PANCAKESWAP_V3_QUOTER_1 || "",
+    42161: process.env.PANCAKESWAP_V3_QUOTER_42161 || "",
+    8453: process.env.PANCAKESWAP_V3_QUOTER_8453 || "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+    84532: process.env.PANCAKESWAP_V3_QUOTER_84532 || "",
+    137: process.env.PANCAKESWAP_V3_QUOTER_137 || "",
+    10: process.env.PANCAKESWAP_V3_QUOTER_10 || ""
+  } as Record<number, string>,
+  aerodromeRouters: {
+    8453: process.env.AERODROME_ROUTER_8453 || "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"
+  } as Record<number, string>,
+  alienBaseRouters: {
+    8453: process.env.ALIENBASE_ROUTER_8453 || ""
+  } as Record<number, string>,
+  openOcean: {
+    enabled: process.env.OPENOCEAN_ENABLED !== "false",
+    baseUrl: process.env.OPENOCEAN_BASE_URL || "https://open-api.openocean.finance",
+    chainNames: {
+      1: process.env.OPENOCEAN_CHAIN_1 || "eth",
+      42161: process.env.OPENOCEAN_CHAIN_42161 || "arbitrum",
+      8453: process.env.OPENOCEAN_CHAIN_8453 || "base",
+      137: process.env.OPENOCEAN_CHAIN_137 || "polygon",
+      10: process.env.OPENOCEAN_CHAIN_10 || "optimism"
+    } as Record<number, string>
+  }
 };
 
 export const SUPPORTED_CHAIN_IDS = [1, 42161, 8453, 84532, 137, 10] as const;
