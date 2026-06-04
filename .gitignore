@@ -1,0 +1,10 @@
+node_modules
+dist
+cache
+artifacts
+coverage
+typechain-types
+.env
+.DS_Store
+frontend/dist
+*.tsbuildinfo
