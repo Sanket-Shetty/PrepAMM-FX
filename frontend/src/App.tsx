@@ -27,7 +27,7 @@ type QuoteResponse = {
     expiresAt: string;
     spreadBps: number;
     protocolFeeBps: number;
-    source: "amm" | "price-api";
+    source: "amm" | "price-api" | "self" | "native-usdc-amm";
     benchmarkOutput: string;
     bestAmmRoute: null | {
       adapter: string;
@@ -35,6 +35,17 @@ type QuoteResponse = {
       amountOut: string;
       gasEstimate?: string;
     };
+    routePlan: Array<{
+      leg: number;
+      from: TokenSymbol;
+      to: TokenSymbol;
+      venue: string;
+      source: string;
+      inputAmount: string;
+      outputAmount: string;
+      adapter?: string;
+      feeTier?: number;
+    }>;
   };
 };
 
@@ -72,8 +83,8 @@ export function App() {
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const { writeContractAsync, isPending: isExecuting } = useWriteContract();
-  const [inputSymbol, setInputSymbol] = useState<TokenSymbol>("EURC");
-  const [outputSymbol, setOutputSymbol] = useState<TokenSymbol>("USDC");
+  const [inputSymbol, setInputSymbol] = useState<TokenSymbol>("EURe");
+  const [outputSymbol, setOutputSymbol] = useState<TokenSymbol>("WETH");
   const [amount, setAmount] = useState("100");
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [status, setStatus] = useState("");
@@ -86,6 +97,15 @@ export function App() {
     () => chains.find((chain) => chain.id === (isConnected ? chainId : selectedChainId)) || chains.find((chain) => chain.id === defaultChainId) || chains[0],
     [chainId, isConnected, selectedChainId]
   );
+  const sourceLabel = quote
+    ? quote.quote.source === "amm"
+      ? "AMM"
+      : quote.quote.source === "native-usdc-amm"
+        ? "Native USDC + AMM"
+        : quote.quote.source === "self"
+          ? "Same asset"
+          : "Price API"
+    : "";
 
   async function getQuote() {
     setIsQuoting(true);
@@ -253,9 +273,26 @@ export function App() {
         <div className="quoteMeta">
           <span>Fee 10 bps</span>
           <span>Spread {quote?.quote.spreadBps ?? 20} bps</span>
-          <span>{quote ? `Source ${quote.quote.source === "amm" ? "AMM" : "Price API"}` : "Zero slippage quote"}</span>
+          <span>{quote ? `Source ${sourceLabel}` : "Zero slippage quote"}</span>
           <span>{quote ? `Expires ${new Date(quote.quote.expiresAt).toLocaleTimeString()}` : ""}</span>
         </div>
+        {quote?.quote.routePlan && (
+          <div className="routePlan">
+            {quote.quote.routePlan.map((leg) => (
+              <div className="routeLeg" key={leg.leg}>
+                <span>Leg {leg.leg}</span>
+                <strong>
+                  {leg.from} to {leg.to}
+                </strong>
+                <span>{leg.venue}</span>
+                <span>
+                  {leg.inputAmount} {leg.from} to {leg.outputAmount} {leg.to}
+                </span>
+                {leg.adapter && <span>{leg.adapter} {leg.feeTier ? `${leg.feeTier / 10_000}%` : ""}</span>}
+              </div>
+            ))}
+          </div>
+        )}
         {quote?.quote.bestAmmRoute && (
           <div className="routeMeta">
             <span>{quote.quote.bestAmmRoute.adapter}</span>

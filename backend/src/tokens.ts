@@ -63,6 +63,7 @@ const chainEnvSuffixes: Record<number, string> = {
   1: "1",
   42161: "42161",
   8453: "8453",
+  84532: "84532",
   137: "137",
   10: "10"
 };
@@ -78,6 +79,7 @@ function addresses(symbol: TokenSymbol, known: Record<number, string> = {}): Rec
     1: envAddress(symbol, 1) || known[1] || "",
     42161: envAddress(symbol, 42161) || known[42161] || "",
     8453: envAddress(symbol, 8453) || known[8453] || "",
+    84532: envAddress(symbol, 84532) || known[84532] || "",
     137: envAddress(symbol, 137) || known[137] || "",
     10: envAddress(symbol, 10) || known[10] || ""
   };
@@ -147,6 +149,7 @@ export const TOKENS: Record<TokenSymbol, TokenInfo> = {
       1: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
       42161: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
       8453: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      84532: "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
       137: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
       10: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
     })

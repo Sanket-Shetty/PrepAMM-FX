@@ -158,6 +158,39 @@ output {
   font-size: 13px;
 }
 
+.routePlan {
+  display: grid;
+  gap: 8px;
+}
+
+.routeLeg {
+  display: grid;
+  grid-template-columns: 56px minmax(86px, 0.8fr) minmax(140px, 1.2fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #24433f;
+  border-radius: 8px;
+  background: #091617;
+  color: #cfe7e4;
+  font-size: 13px;
+}
+
+.routeLeg strong {
+  color: #f4fffd;
+  font-weight: 700;
+}
+
+.routeLeg span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.routeLeg span:nth-child(n + 4) {
+  grid-column: 2 / -1;
+  color: #8ee7d0;
+}
+
 .quoteTable {
   display: grid;
   max-height: 360px;
@@ -225,5 +258,13 @@ output {
 
   .quoteRow span:last-child {
     grid-column: 1 / -1;
+  }
+
+  .routeLeg {
+    grid-template-columns: 1fr;
+  }
+
+  .routeLeg span:nth-child(n + 4) {
+    grid-column: auto;
   }
 }

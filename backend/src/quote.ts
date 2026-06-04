@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { config, DEFAULT_SPREAD_BPS, PROTOCOL_FEE_BPS, QUOTE_TTL_SECONDS, SUPPORTED_CHAIN_IDS } from "./config";
-import { getBestAmmQuote } from "./amm";
+import { AmmQuoteResult, getBestAmmQuote } from "./amm";
 import { getUsdPrice } from "./pricing";
 import { TOKENS, TokenSymbol } from "./tokens";
 
@@ -16,6 +16,12 @@ export interface QuoteRequest {
 
 function applyBps(amount: bigint, bps: number): bigint {
   return (amount * BigInt(10_000 - bps)) / 10_000n;
+}
+
+function getUsdcRouteMode(inputSymbol: TokenSymbol, outputSymbol: TokenSymbol): "input-native" | "output-native" | "none" {
+  if (inputSymbol === "EURe" && outputSymbol !== "USDC") return "input-native";
+  if (outputSymbol === "EURe" && inputSymbol !== "USDC") return "output-native";
+  return "none";
 }
 
 export async function buildQuote(req: QuoteRequest) {
@@ -36,24 +42,52 @@ export async function buildQuote(req: QuoteRequest) {
   const wallet = new ethers.Wallet(config.mmPrivateKey);
   const maker = config.makerAddress && ethers.isAddress(config.makerAddress) ? config.makerAddress : wallet.address;
   const inputUnits = ethers.parseUnits(req.inputAmount, inputToken.decimals);
-  const ammQuote = await getBestAmmQuote({
-    chainId: req.chainId,
-    tokenIn: inputTokenAddress,
-    tokenOut: outputTokenAddress,
-    amountIn: inputUnits,
-    inputSymbol: req.inputSymbol,
-    outputSymbol: req.outputSymbol
-  });
-  if (req.requireAmm && !ammQuote.bestRoute) {
+  const isSameAsset = inputTokenAddress.toLowerCase() === outputTokenAddress.toLowerCase();
+  const usdcRouteMode = getUsdcRouteMode(req.inputSymbol, req.outputSymbol);
+  const routeViaUsdc = usdcRouteMode !== "none";
+  const usdcToken = TOKENS.USDC;
+  const usdcTokenAddress = usdcToken.addresses[req.chainId];
+
+  if (routeViaUsdc && !usdcTokenAddress) throw new Error("USDC not deployed for selected chain");
+
+  const inputUsd = isSameAsset ? 1 : await getUsdPrice(req.inputSymbol);
+  const outputUsd = isSameAsset ? 1 : await getUsdPrice(req.outputSymbol);
+  const usdcUsd = routeViaUsdc ? await getUsdPrice("USDC") : 1;
+  const nativeUsdcRawOutput = Number(req.inputAmount) * (inputUsd / usdcUsd);
+  const nativeUsdcOutputUnits = usdcRouteMode === "input-native" ? ethers.parseUnits(nativeUsdcRawOutput.toFixed(Math.min(usdcToken.decimals, 8)), usdcToken.decimals) : 0n;
+  const ammInputTokenAddress = usdcRouteMode === "input-native" ? usdcTokenAddress : inputTokenAddress;
+  const ammOutputTokenAddress = usdcRouteMode === "output-native" ? usdcTokenAddress : outputTokenAddress;
+  const ammInputSymbol = usdcRouteMode === "input-native" ? "USDC" : req.inputSymbol;
+  const ammOutputSymbol = usdcRouteMode === "output-native" ? "USDC" : req.outputSymbol;
+  const ammInputUnits = usdcRouteMode === "input-native" ? nativeUsdcOutputUnits : inputUnits;
+  const ammOutputToken = usdcRouteMode === "output-native" ? usdcToken : outputToken;
+
+  const ammQuote: AmmQuoteResult = isSameAsset
+    ? { attemptedRoutes: [] }
+    : await getBestAmmQuote({
+        chainId: req.chainId,
+        tokenIn: ammInputTokenAddress,
+        tokenOut: ammOutputTokenAddress,
+        amountIn: ammInputUnits,
+        inputSymbol: ammInputSymbol,
+        outputSymbol: ammOutputSymbol
+      });
+  if (req.requireAmm && !isSameAsset && !ammQuote.bestRoute) {
     const reasons = ammQuote.attemptedRoutes.map((route) => route.reason).filter(Boolean);
-    throw new Error(`No AMM liquidity route found${reasons.length ? `: ${reasons[0]}` : ""}`);
+    const missingRoute = usdcRouteMode === "input-native" ? `USDC -> ${req.outputSymbol}` : usdcRouteMode === "output-native" ? `${req.inputSymbol} -> USDC` : `${req.inputSymbol} -> ${req.outputSymbol}`;
+    throw new Error(`No ${missingRoute} AMM liquidity route found${reasons.length ? `: ${reasons[0]}` : ""}`);
   }
-  const inputUsd = await getUsdPrice(req.inputSymbol);
-  const outputUsd = await getUsdPrice(req.outputSymbol);
   const rawOutput = Number(req.inputAmount) * (inputUsd / outputUsd);
-  const priceApiOutput = ethers.parseUnits(rawOutput.toFixed(Math.min(outputToken.decimals, 8)), outputToken.decimals);
-  const benchmarkOutput = ammQuote.bestRoute ? BigInt(ammQuote.bestRoute.amountOut) : priceApiOutput;
-  const outputAmount = applyBps(benchmarkOutput, DEFAULT_SPREAD_BPS);
+  const priceApiOutput = isSameAsset ? inputUnits : ethers.parseUnits(rawOutput.toFixed(Math.min(outputToken.decimals, 8)), outputToken.decimals);
+  const ammBenchmarkOutput = ammQuote.bestRoute ? BigInt(ammQuote.bestRoute.amountOut) : null;
+  const outputNativeRawOutput =
+    usdcRouteMode === "output-native" && ammBenchmarkOutput !== null
+      ? Number(ethers.formatUnits(ammBenchmarkOutput, usdcToken.decimals)) * (usdcUsd / outputUsd)
+      : 0;
+  const outputNativeBenchmark = usdcRouteMode === "output-native" ? ethers.parseUnits(outputNativeRawOutput.toFixed(Math.min(outputToken.decimals, 8)), outputToken.decimals) : 0n;
+  const benchmarkOutput = isSameAsset ? inputUnits : usdcRouteMode === "output-native" ? (ammBenchmarkOutput === null ? priceApiOutput : outputNativeBenchmark) : ammBenchmarkOutput ?? priceApiOutput;
+  const outputAmount = isSameAsset ? benchmarkOutput : applyBps(benchmarkOutput, DEFAULT_SPREAD_BPS);
+  const source = isSameAsset ? "self" : routeViaUsdc && ammQuote.bestRoute ? "native-usdc-amm" : ammQuote.bestRoute ? "amm" : "price-api";
   const expiry = Math.floor(Date.now() / 1000) + QUOTE_TTL_SECONDS;
   const nonce = req.nonce ? BigInt(req.nonce) : BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000));
 
@@ -102,16 +136,75 @@ export async function buildQuote(req: QuoteRequest) {
       guaranteedOutput: ethers.formatUnits(outputAmount, outputToken.decimals),
       inputUsd,
       outputUsd,
-      source: ammQuote.bestRoute ? "amm" : "price-api",
+      source,
       benchmarkOutput: ethers.formatUnits(benchmarkOutput, outputToken.decimals),
       bestAmmRoute: ammQuote.bestRoute
         ? {
             adapter: ammQuote.bestRoute.adapter,
             feeTier: ammQuote.bestRoute.feeTier,
-            amountOut: ethers.formatUnits(ammQuote.bestRoute.amountOut, outputToken.decimals),
+            amountOut: ethers.formatUnits(ammQuote.bestRoute.amountOut, ammOutputToken.decimals),
             gasEstimate: ammQuote.bestRoute.gasEstimate
           }
         : null,
+      routePlan: usdcRouteMode === "input-native"
+        ? [
+            {
+              leg: 1,
+              from: req.inputSymbol,
+              to: "USDC",
+              venue: "Our EURe/USDC native liquidity",
+              source: "native-liquidity",
+              inputAmount: req.inputAmount,
+              outputAmount: ethers.formatUnits(nativeUsdcOutputUnits, usdcToken.decimals)
+            },
+            {
+              leg: 2,
+              from: "USDC",
+              to: req.outputSymbol,
+              venue: ammQuote.bestRoute ? "Market makers via AMM benchmark" : "Market makers via reference fallback",
+              source: ammQuote.bestRoute ? "amm" : "price-api",
+              inputAmount: ethers.formatUnits(nativeUsdcOutputUnits, usdcToken.decimals),
+              outputAmount: ethers.formatUnits(ammBenchmarkOutput ?? priceApiOutput, outputToken.decimals),
+              adapter: ammQuote.bestRoute?.adapter,
+              feeTier: ammQuote.bestRoute?.feeTier
+            }
+          ]
+        : usdcRouteMode === "output-native"
+          ? [
+              {
+                leg: 1,
+                from: req.inputSymbol,
+                to: "USDC",
+                venue: ammQuote.bestRoute ? "Market makers via AMM benchmark" : "Market makers via reference fallback",
+                source: ammQuote.bestRoute ? "amm" : "price-api",
+                inputAmount: req.inputAmount,
+                outputAmount: ethers.formatUnits(ammBenchmarkOutput ?? ethers.parseUnits((Number(req.inputAmount) * (inputUsd / usdcUsd)).toFixed(Math.min(usdcToken.decimals, 8)), usdcToken.decimals), usdcToken.decimals),
+                adapter: ammQuote.bestRoute?.adapter,
+                feeTier: ammQuote.bestRoute?.feeTier
+              },
+              {
+                leg: 2,
+                from: "USDC",
+                to: req.outputSymbol,
+                venue: "Our EURe/USDC native liquidity",
+                source: "native-liquidity",
+                inputAmount: ethers.formatUnits(ammBenchmarkOutput ?? 0n, usdcToken.decimals),
+                outputAmount: ethers.formatUnits(benchmarkOutput, outputToken.decimals)
+              }
+            ]
+        : [
+            {
+              leg: 1,
+              from: req.inputSymbol,
+              to: req.outputSymbol,
+              venue: isSameAsset ? "Same asset" : ammQuote.bestRoute ? "Market makers via AMM benchmark" : "Reference-price fallback",
+              source,
+              inputAmount: req.inputAmount,
+              outputAmount: ethers.formatUnits(benchmarkOutput, outputToken.decimals),
+              adapter: ammQuote.bestRoute?.adapter,
+              feeTier: ammQuote.bestRoute?.feeTier
+            }
+          ],
       attemptedAmmRoutes: ammQuote.attemptedRoutes,
       spreadBps: DEFAULT_SPREAD_BPS,
       protocolFeeBps: PROTOCOL_FEE_BPS,

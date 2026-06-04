@@ -31,6 +31,10 @@ const config: HardhatUserConfig = {
       url: process.env.BASE_RPC_URL || "",
       accounts
     },
+    baseSepolia: {
+      url: process.env.BASE_SEPOLIA_RPC_URL || "",
+      accounts
+    },
     polygon: {
       url: process.env.POLYGON_RPC_URL || "",
       accounts

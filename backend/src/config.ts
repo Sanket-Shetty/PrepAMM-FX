@@ -16,6 +16,7 @@ export const config = {
     1: process.env.SETTLEMENT_ADDRESS_1 || (allowDevDefaults ? devSettlement : ""),
     42161: process.env.SETTLEMENT_ADDRESS_42161 || (allowDevDefaults ? devSettlement : ""),
     8453: process.env.SETTLEMENT_ADDRESS_8453 || (allowDevDefaults ? devSettlement : ""),
+    84532: process.env.SETTLEMENT_ADDRESS_84532 || (allowDevDefaults ? devSettlement : ""),
     137: process.env.SETTLEMENT_ADDRESS_137 || (allowDevDefaults ? devSettlement : ""),
     10: process.env.SETTLEMENT_ADDRESS_10 || (allowDevDefaults ? devSettlement : "")
   } as Record<number, string>,
@@ -23,6 +24,7 @@ export const config = {
     1: process.env.ETHEREUM_RPC_URL || "",
     42161: process.env.ARBITRUM_RPC_URL || "",
     8453: process.env.BASE_RPC_URL || "",
+    84532: process.env.BASE_SEPOLIA_RPC_URL || "",
     137: process.env.POLYGON_RPC_URL || "",
     10: process.env.OPTIMISM_RPC_URL || ""
   } as Record<number, string>,
@@ -30,12 +32,13 @@ export const config = {
     1: process.env.UNISWAP_V3_QUOTER_1 || "",
     42161: process.env.UNISWAP_V3_QUOTER_42161 || "",
     8453: process.env.UNISWAP_V3_QUOTER_8453 || "",
+    84532: process.env.UNISWAP_V3_QUOTER_84532 || "",
     137: process.env.UNISWAP_V3_QUOTER_137 || "",
     10: process.env.UNISWAP_V3_QUOTER_10 || ""
   } as Record<number, string>
 };
 
-export const SUPPORTED_CHAIN_IDS = [1, 42161, 8453, 137, 10] as const;
+export const SUPPORTED_CHAIN_IDS = [1, 42161, 8453, 84532, 137, 10] as const;
 export const PROTOCOL_FEE_BPS = 10;
 export const DEFAULT_SPREAD_BPS = 20;
 export const QUOTE_TTL_SECONDS = 90;

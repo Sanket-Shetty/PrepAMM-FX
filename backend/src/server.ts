@@ -40,7 +40,7 @@ app.post("/quote", async (req, res) => {
 
 app.post("/quotes/stable-to-usdc", async (req, res) => {
   const chainId = Number(req.body.chainId);
-  const taker = String(req.body.taker || "");
+  const taker = String(req.body.taker || "0x000000000000000000000000000000000000dEaD");
   const inputAmount = String(req.body.inputAmount || "100");
 
   const rows = [];

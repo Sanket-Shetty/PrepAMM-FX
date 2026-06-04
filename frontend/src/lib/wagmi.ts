@@ -1,7 +1,7 @@
 import { http, createConfig } from "wagmi";
-import { arbitrum, base, mainnet, optimism, polygon } from "wagmi/chains";
+import { arbitrum, base, baseSepolia, mainnet, optimism, polygon } from "wagmi/chains";
 
-export const chains = [mainnet, arbitrum, base, polygon, optimism] as const;
+export const chains = [base, baseSepolia, mainnet, arbitrum, polygon, optimism] as const;
 
 export const wagmiConfig = createConfig({
   chains,
@@ -9,6 +9,7 @@ export const wagmiConfig = createConfig({
     [mainnet.id]: http(),
     [arbitrum.id]: http(),
     [base.id]: http(),
+    [baseSepolia.id]: http(),
     [polygon.id]: http(),
     [optimism.id]: http()
   }

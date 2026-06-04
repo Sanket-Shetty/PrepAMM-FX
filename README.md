@@ -9,7 +9,7 @@ PrepAMM FX is a capital-efficient RFQ settlement foundation for fiat-backed stab
 - `backend/` exposes `POST /quote`, prices pairs through CoinGecko with CoinMarketCap and Binance fallbacks, applies market-maker spread, applies the protocol fee field, and signs RFQ orders with the MM key.
 - `frontend/` is a Vite React dApp using wagmi and viem for wallet connection, quote retrieval, and `settleRFQ` execution.
 
-Supported v1 chains: Ethereum Mainnet, Arbitrum, Base, Polygon, and Optimism.
+Supported v1 chains: Ethereum Mainnet, Arbitrum, Base, Base Sepolia, Polygon, and Optimism.
 
 ## Local Setup
 
@@ -60,6 +60,8 @@ The first adapter supports Uniswap V3-compatible `QuoterV2` contracts across the
 ```bash
 BASE_RPC_URL=https://mainnet.base.org
 UNISWAP_V3_QUOTER_8453=0xQuoterV2OnBase
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+UNISWAP_V3_QUOTER_84532=0xC5290058841028F1614F3A6F0F5816cAd0df5E27
 ```
 
 For each quote, the backend tries common V3 fee tiers: `0.01%`, `0.05%`, `0.3%`, and `1%`. It chooses the route with the highest output, then applies the RFQ spread before signing the order. If no pool exists, no liquidity is available, the quoter is not configured, or the RPC fails, the response falls back to reference-price mode and the frontend shows `Source Price API`.
@@ -94,6 +96,7 @@ MM_SIGNER_ADDRESS=0xMarketMaker
 ETHEREUM_RPC_URL=https://...
 ARBITRUM_RPC_URL=https://...
 BASE_RPC_URL=https://...
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 POLYGON_RPC_URL=https://...
 OPTIMISM_RPC_URL=https://...
 ```
